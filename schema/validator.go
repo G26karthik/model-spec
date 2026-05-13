@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sync"
 
 	v1 "github.com/modelpack/model-spec/specs-go/v1"
 	"github.com/santhosh-tekuri/jsonschema/v5"
@@ -52,18 +53,56 @@ func (v Validator) Validate(src io.Reader) error {
 	return v.validateSchema(src)
 }
 
+// compiledSchemas caches compiled *jsonschema.Schema values by Validator.
+// Compilation is expensive; caching avoids repeating it on every Validate call.
+var compiledSchemas sync.Map
+
 func (v Validator) validateSchema(src io.Reader) error {
 	if _, ok := specs[v]; !ok {
 		return fmt.Errorf("no validator available for %s", string(v))
 	}
 
+	schema, err := loadCompiledSchema(v)
+	if err != nil {
+		return err
+	}
+
+	var input interface{}
+	if err := json.NewDecoder(src).Decode(&input); err != nil {
+		return fmt.Errorf("unable to parse json to validate: %w", err)
+	}
+	if err := schema.Validate(input); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+	return nil
+}
+
+// loadCompiledSchema returns a compiled schema for the given validator,
+// using a sync.Map cache so compilation happens only once per validator.
+func loadCompiledSchema(v Validator) (*jsonschema.Schema, error) {
+	if cached, ok := compiledSchemas.Load(v); ok {
+		return cached.(*jsonschema.Schema), nil
+	}
+
+	schema, err := compileSchema(v)
+	if err != nil {
+		return nil, err
+	}
+
+	actual, loaded := compiledSchemas.LoadOrStore(v, schema)
+	if loaded {
+		return actual.(*jsonschema.Schema), nil
+	}
+	return schema, nil
+}
+
+func compileSchema(v Validator) (*jsonschema.Schema, error) {
 	c := jsonschema.NewCompiler()
 	c.AssertFormat = true
 
-	// load the schema files from the embedded FS
 	dir, err := specFS.ReadDir(".")
 	if err != nil {
-		return fmt.Errorf("spec embedded directory could not be loaded: %w", err)
+		return nil, fmt.Errorf("spec embedded directory could not be loaded: %w", err)
 	}
 	for _, file := range dir {
 		if file.IsDir() {
@@ -71,41 +110,26 @@ func (v Validator) validateSchema(src io.Reader) error {
 		}
 		specBuf, err := specFS.ReadFile(file.Name())
 		if err != nil {
-			return fmt.Errorf("could not read spec file %s: %w", file.Name(), err)
+			return nil, fmt.Errorf("could not read spec file %s: %w", file.Name(), err)
 		}
-		err = c.AddResource(file.Name(), bytes.NewReader(specBuf))
-		if err != nil {
-			return fmt.Errorf("failed to add spec file %s: %w", file.Name(), err)
+		if err := c.AddResource(file.Name(), bytes.NewReader(specBuf)); err != nil {
+			return nil, fmt.Errorf("failed to add spec file %s: %w", file.Name(), err)
 		}
 		if len(specURLs[file.Name()]) == 0 {
-			// this would be a bug in the validation code itself, add any missing entry to schema.go
-			return fmt.Errorf("spec file has no aliases: %s", file.Name())
+			return nil, fmt.Errorf("spec file has no aliases: %s", file.Name())
 		}
 		for _, specURL := range specURLs[file.Name()] {
-			err = c.AddResource(specURL, bytes.NewReader(specBuf))
-			if err != nil {
-				return fmt.Errorf("failed to add spec file %s as url %s: %w", file.Name(), specURL, err)
+			if err := c.AddResource(specURL, bytes.NewReader(specBuf)); err != nil {
+				return nil, fmt.Errorf("failed to add spec file %s as url %s: %w", file.Name(), specURL, err)
 			}
 		}
 	}
 
-	// compile based on the type of validator
 	schema, err := c.Compile(specs[v])
 	if err != nil {
-		return fmt.Errorf("failed to compile schema %s: %w", string(v), err)
+		return nil, fmt.Errorf("failed to compile schema %s: %w", string(v), err)
 	}
-
-	// read in the user input and validate
-	var input interface{}
-	err = json.NewDecoder(src).Decode(&input)
-	if err != nil {
-		return fmt.Errorf("unable to parse json to validate: %w", err)
-	}
-	err = schema.Validate(input)
-	if err != nil {
-		return fmt.Errorf("validation failed: %w", err)
-	}
-	return nil
+	return schema, nil
 }
 
 type validateFunc func([]byte) error
