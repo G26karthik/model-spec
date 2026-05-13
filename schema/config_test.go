@@ -268,6 +268,69 @@ func TestConfig(t *testing.T) {
 `,
 			fail: true,
 		},
+		// expected failure: precision is not a documented value
+		{
+			config: `
+{
+  "descriptor": {
+    "name": "xyz-3-8B-Instruct",
+    "version": "3.1"
+  },
+  "config": {
+     "precision": "fp16"
+  },
+  "modelfs": {
+    "type": "layers",
+    "diffIds": [
+       "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+    ]
+  }
+}
+`,
+			fail: true,
+		},
+		// valid: comma-separated precision values
+		{
+			config: `
+{
+  "descriptor": {
+    "name": "xyz-3-8B-Instruct",
+    "version": "3.1"
+  },
+  "config": {
+     "precision": "float16,float8_e4m3"
+  },
+  "modelfs": {
+    "type": "layers",
+    "diffIds": [
+       "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+    ]
+  }
+}
+`,
+			fail: false,
+		},
+		// expected failure: comma-separated precision contains invalid value
+		{
+			config: `
+{
+  "descriptor": {
+    "name": "xyz-3-8B-Instruct",
+    "version": "3.1"
+  },
+  "config": {
+     "precision": "float16,fp16"
+  },
+  "modelfs": {
+    "type": "layers",
+    "diffIds": [
+       "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+    ]
+  }
+}
+`,
+			fail: true,
+		},
 		// expected failure: type is not "layers"
 		{
 			config: `
