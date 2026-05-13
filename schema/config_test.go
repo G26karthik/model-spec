@@ -247,6 +247,90 @@ func TestConfig(t *testing.T) {
 `,
 			fail: true,
 		},
+		// expected failure: paramSize has two decimal digits
+		{
+			config: `
+{
+  "descriptor": {
+    "name": "xyz-3-8B-Instruct",
+    "version": "3.1"
+  },
+  "config": {
+     "paramSize": "8.88b"
+  },
+  "modelfs": {
+    "type": "layers",
+    "diffIds": [
+       "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+    ]
+  }
+}
+`,
+			fail: true,
+		},
+		// expected failure: paramSize missing scale prefix
+		{
+			config: `
+{
+  "descriptor": {
+    "name": "xyz-3-8B-Instruct",
+    "version": "3.1"
+  },
+  "config": {
+     "paramSize": "8"
+  },
+  "modelfs": {
+    "type": "layers",
+    "diffIds": [
+       "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+    ]
+  }
+}
+`,
+			fail: true,
+		},
+		// expected failure: paramSize has invalid scale prefix
+		{
+			config: `
+{
+  "descriptor": {
+    "name": "xyz-3-8B-Instruct",
+    "version": "3.1"
+  },
+  "config": {
+     "paramSize": "8x"
+  },
+  "modelfs": {
+    "type": "layers",
+    "diffIds": [
+       "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+    ]
+  }
+}
+`,
+			fail: true,
+		},
+		// valid: paramSize with decimal and uppercase prefix
+		{
+			config: `
+{
+  "descriptor": {
+    "name": "xyz-3-8B-Instruct",
+    "version": "3.1"
+  },
+  "config": {
+     "paramSize": "6.7B"
+  },
+  "modelfs": {
+    "type": "layers",
+    "diffIds": [
+       "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+    ]
+  }
+}
+`,
+			fail: false,
+		},
 		// expected failure: precision is a number
 		{
 			config: `

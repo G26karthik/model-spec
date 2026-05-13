@@ -31,7 +31,8 @@
             "type": "string"
           },
           "paramSize": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d)?[KkMmBbTtQq]$"
           },
           "precision": {
             "type": "string"
